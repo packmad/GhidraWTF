@@ -37,7 +37,7 @@ For example, under Windows:
 C:\Users\simo\AppData\Roaming\ghidra\ghidra_11.4.2_PUBLIC\venv\Scripts\python.exe -m pip install google-genai openai ollama
 ```
 
-However, there's no need to install them all, the script only imports what you specify in the config.
+However, **there's no need to install them all**, the script only imports what you specify in the config.
 
 
 ## Configure
