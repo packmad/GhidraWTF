@@ -24,6 +24,7 @@ Explain decompiled functions in **one click**.
    - In Ghidra: `Window -> Script Manager -> Script Directories`
 
 2. **Make sure you’re running it under pyGhidra** (the script header includes `#@runtime PyGhidra`).
+   - Since [Ghidra 12.0](https://github.com/NationalSecurityAgency/ghidra/blob/Ghidra_12.0_build/Ghidra/Configurations/Public_Release/src/global/docs/WhatsNew.md), it is the default Python scripting engine (from Jython to PyGhidra)
    - pyGhidra docs: [`Ghidra/Features/PyGhidra/src/main/py/README.md`](https://github.com/NationalSecurityAgency/ghidra/blob/master/Ghidra/Features/PyGhidra/src/main/py/README.md)
 
 3. **Install the provider dependency into the same Python environment that pyGhidra uses**:
@@ -31,7 +32,12 @@ Explain decompiled functions in **one click**.
   - **OpenAI**: `pip install openai`
   - **Ollama**: `pip install ollama`
 
-There's no need to install them all, the script only imports what you specify in the config.
+For example, under Windows:
+```
+C:\Users\simo\AppData\Roaming\ghidra\ghidra_11.4.2_PUBLIC\venv\Scripts\python.exe -m pip install google-genai openai ollama
+```
+
+However, there's no need to install them all, the script only imports what you specify in the config.
 
 
 ## Configure
