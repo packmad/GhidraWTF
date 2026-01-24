@@ -17,7 +17,7 @@ CONFIG = {
     'host': '',
 }
 
-if CONFIG['LLMClient'] not in {'Gemini', 'Ollama'}:
+if CONFIG['LLMClient'] not in {'Gemini', 'Ollama', 'Openai'}:
     print(f'Unsupported LLMClient: {CONFIG['LLMClient']}')
     raise SystemExit
 
@@ -60,7 +60,7 @@ Decompiled function:\n
 
 match CONFIG['LLMClient']:
     case 'Gemini':
-        import google.generativeai as genai  # pip install 
+        import google.generativeai as genai  # pip install google-genai
 
         class Gemini(LLMClient):
             
@@ -74,7 +74,20 @@ match CONFIG['LLMClient']:
                     generation_config={"temperature": 0.1},
                 )
                 return response.text
+    case 'Openai':
+        from openai import OpenAI  # pip install openai 
 
+        class Openai(LLMClient):
+            
+            def __init__(self, api_key: str, model_name : str = "gpt-4.1-mini"):
+                self.openai_client = OpenAI(api_key=api_key)
+                self.model_name = model_name
+
+            def _summarize_impl(self, prompt: str) -> str:
+                response = self.openai_client.responses.create(
+                    model=self.model_name, input=prompt, temperature=0.1)
+                return response.output_text
+                
     case 'Ollama':
         if CONFIG['host'] == '':
             print('You must specify the host for Ollama')
