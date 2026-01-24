@@ -3,6 +3,7 @@
 #@keybinding Ctrl-Alt-W
 #@toolbar
 #@runtime PyGhidra
+import threading
 import re
 from pathlib import Path
 from abc import ABC, abstractmethod
@@ -17,13 +18,9 @@ CONFIG = {
     'host': '',
 }
 
-if CONFIG['LLMClient'] not in {'Gemini', 'Ollama', 'Openai'}:
-    print(f'Unsupported LLMClient: {CONFIG['LLMClient']}')
-    raise SystemExit
-
 if CONFIG['api_key'] == '' and CONFIG['LLMClient'] != 'Ollama':
     script_path = Path(__file__).resolve()
-    print(f'Please edit {script_path} and add your API key')
+    popup(f'ERROR: Missing API key. Please edit {script_path} and set it!')
     raise SystemExit
 
 
@@ -48,9 +45,9 @@ Decompiled function:\n
     
     def summarize(self, decompiled_code: str) -> str:
         prompt = f"{self.PROMPT}{self.TAG_BLOCK.sub('', decompiled_code.replace(self.DEC_WARNING, ''))}"
-        print(f'!DEBUG {prompt=}')
+        #print(f'!DEBUG {prompt=}')
         answer = self.append_tag(self._summarize_impl(prompt))
-        print(f'!DEBUG {answer=}')
+        #print(f'!DEBUG {answer=}')
         return answer
 
     @abstractmethod
@@ -90,7 +87,7 @@ match CONFIG['LLMClient']:
                 
     case 'Ollama':
         if CONFIG['host'] == '':
-            print('You must specify the host for Ollama')
+            popup('ERROR: You must specify the host for Ollama')
             raise SystemExit
 
         from ollama import Client  # pip install ollama
@@ -108,37 +105,99 @@ match CONFIG['LLMClient']:
                 return response['message']['content']
 
     case _:
-        print(f'Unsupported LLMClient: {CONFIG['LLMClient']}')
+        popup(f'ERROR: Unsupported LLMClient: {CONFIG['LLMClient']}')
         raise SystemExit
     
 
+def _check_cancelled(mon):
+    """
+    Exit early if the user cancelled the script.
+    - `isCancelled()` is a cheap boolean check.
+    - `checkCanceled()` (if present) may throw a CancelledException.
+    """
+    if mon is None:
+        return
+    try:
+        if mon.isCancelled():
+            raise SystemExit("Cancelled")
+    except SystemExit:
+        raise
+    except Exception:
+        # If monitor doesn't expose isCancelled in this environment, ignore.
+        pass
+    try:
+        mon.checkCanceled()
+    except SystemExit:
+        raise
+    except Exception:
+        # checkCanceled() throws a Java CancelledException; treat any exception as cancellation signal.
+        # (We keep it broad because the exact exception class differs across environments.)
+        if hasattr(mon, "isCancelled") and mon.isCancelled():
+            raise SystemExit("Cancelled")
+
+
 addr = currentAddress
 if addr is None:
-    print("No currentAddress. Click in Listing or Decompiler to set a location.")
+    popup("ERROR: No currentAddress. Click in Listing or Decompiler to set a location.")
     raise SystemExit
 
 func = getFunctionContaining(addr)
 if func is None:
-    print(f"No function containing address {addr}.")
+    popup(f"ERROR: No function containing address {addr}.")
     raise SystemExit
 
 di = DecompInterface()
 di.openProgram(currentProgram)
 
-res = di.decompileFunction(func, 32, monitor)
+mon = getMonitor()
+_check_cancelled(mon)
+try:
+    mon.setMessage("Expl(AI)n: Decompiling current function...")
+except Exception:
+    pass
+
+res = di.decompileFunction(func, 32, mon)
+_check_cancelled(mon)
 if not res.decompileCompleted():
-    print("Decompilation failed:", res.getErrorMessage())
+    popup("ERROR: Decompilation failed:", res.getErrorMessage())
     raise SystemExit
 
 df = res.getDecompiledFunction()
 if df is None:
-    print("No DecompiledFunction returned.")
+    popup("ERROR: No DecompiledFunction returned.")
     raise SystemExit
 
 llm_client: LLMClient = globals()[CONFIG['LLMClient']](CONFIG['api_key'])
-summary = llm_client.summarize(df.getC())
+_check_cancelled(mon)
+try:
+    mon.setMessage("Expl(AI)n: Querying LLM backend...")
+except Exception:
+    pass
+
+# The LLM call can block for a long time. We can’t reliably abort the HTTP request,
+# but we *can* honor cancellation by polling the monitor and exiting before we
+# write any comments back to the program.
+_llm_result = {"summary": None, "err": None}
+
+def _llm_worker():
+    try:
+        code = df.getC()
+        _llm_result["summary"] = llm_client.summarize(code)
+    except Exception as e:
+        _llm_result["err"] = e
+
+t = threading.Thread(target=_llm_worker, name="ExplAI-LLM", daemon=True)
+t.start()
+while t.is_alive():
+    _check_cancelled(mon)
+    t.join(0.1)
+
+_check_cancelled(mon)
+if _llm_result["err"] is not None:
+    raise _llm_result["err"]
+summary = _llm_result["summary"]
 if not summary:
-    print("Empty summary returned!?!?")
+    popup("ERROR: LLM returned an empty summary!?")
     raise SystemExit
 
 listing = currentProgram.getListing()
