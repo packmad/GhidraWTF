@@ -3,57 +3,101 @@
 #@keybinding Ctrl-Alt-W
 #@toolbar
 #@runtime PyGhidra
-
+import re
 from pathlib import Path
 from abc import ABC, abstractmethod
 from ghidra.app.decompiler import DecompInterface
 from ghidra.program.model.listing import CodeUnit
 from java.util import ArrayList
 
-import google.generativeai as genai
-
 
 CONFIG = {
-    'LLMClient': 'Gemini',
+    'LLMClient': '',
     'api_key': '',
+    'host': '',
 }
 
-if CONFIG['api_key'] == '':
+if CONFIG['LLMClient'] not in {'Gemini', 'Ollama'}:
+    print(f'Unsupported LLMClient: {CONFIG['LLMClient']}')
+    raise SystemExit
+
+if CONFIG['api_key'] == '' and CONFIG['LLMClient'] != 'Ollama':
     script_path = Path(__file__).resolve()
     print(f'Please edit {script_path} and add your API key')
     raise SystemExit
 
 
 class LLMClient(ABC):
-    PROMPT: str = """
-Role: You are an expert reverse engineer and malware analyst.
-Context: The following code is decompiled output from Ghidra.
-Task: Provide a brief, high-level summary explaining what the function does.
-Focus on the function's overall purpose and behavior, not implementation details.
-Emphasize any malicious or suspicious behavior if present.
-Do not speculate beyond what is directly supported by the code.
+    PROMPT: str =  """
+Role: You are an expert reverse engineer in analyzing decompiled binaries.
+Context: You are given the output of Ghidra's decompiler for a single function.
+Task: Produce a concise, high-level summary of the function's purpose and observable behavior.
+Guidelines:
+- Describe what the function does, not how it is implemented.
+- Base your explanation strictly on evidence present in the decompiled code.
+- Avoid speculation, assumptions about intent, or references to missing context.
+Decompiled function:\n
 """
-        
-    @abstractmethod
-    def summarize(self, decompiled_code: str) -> str:
-        raise NotImplementedError
+    TAG_BEGIN = ">>>BEGIN-AI-GENERATED-CONTENT>>>"
+    TAG_END   = "<<END-AI-GENERATED-CONTENT<<<"
+    TAG_BLOCK = re.compile(re.escape(TAG_BEGIN) + r".*?" + re.escape(TAG_END), flags=re.DOTALL)
+    DEC_WARNING = '\n/* WARNING: Type propagation algorithm not settling */\r\n'
+
+    def append_tag(self, txt: str) -> str:
+        return f"{self.TAG_BEGIN}\n{txt}\n{self.TAG_END}\n"
     
-
-class Gemini(LLMClient):
-
-    def __init__(self, api_key: str, model_name : str = 'models/gemini-2.5-flash-lite'):
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name)
-
     def summarize(self, decompiled_code: str) -> str:
-        prompt = f"{self.PROMPT}\n\nDecompiled code:\n{decompiled_code}"
+        prompt = f"{self.PROMPT}{self.TAG_BLOCK.sub('', decompiled_code.replace(self.DEC_WARNING, ''))}"
+        print(f'!DEBUG {prompt=}')
+        answer = self.append_tag(self._summarize_impl(prompt))
+        print(f'!DEBUG {answer=}')
+        return answer
 
-        response = self.model.generate_content(
-            contents=[{"role": "user", "parts": [prompt]}],
-            generation_config={"temperature": 0.1},
-        )
-        return response.text
+    @abstractmethod
+    def _summarize_impl(self, prompt: str) -> str:
+        raise NotImplementedError
 
+
+match CONFIG['LLMClient']:
+    case 'Gemini':
+        import google.generativeai as genai  # pip install 
+
+        class Gemini(LLMClient):
+            
+            def __init__(self, api_key: str, model_name : str = 'models/gemini-2.5-flash-lite'):
+                genai.configure(api_key=api_key)
+                self.model = genai.GenerativeModel(model_name)
+
+            def _summarize_impl(self, prompt: str) -> str:
+                response = self.model.generate_content(
+                    contents=[{"role": "user", "parts": [prompt]}],
+                    generation_config={"temperature": 0.1},
+                )
+                return response.text
+
+    case 'Ollama':
+        if CONFIG['host'] == '':
+            print('You must specify the host for Ollama')
+            raise SystemExit
+
+        from ollama import Client  # pip install ollama
+        
+        class Ollama(LLMClient):
+            
+            def __init__(self, api_key: str, model_name : str = 'qwen2.5-coder:32b'):
+                self.model = Client(host=CONFIG['host'])
+                self.model_name = model_name
+            
+            def _summarize_impl(self, prompt: str) -> str:
+                user_message = {'role': 'user', 'content': prompt}
+                params = {'temperature': 0.1}
+                response = self.model.chat(model=self.model_name, options=params, messages=[user_message])
+                return response['message']['content']
+
+    case _:
+        print(f'Unsupported LLMClient: {CONFIG['LLMClient']}')
+        raise SystemExit
+    
 
 addr = currentAddress
 if addr is None:
@@ -92,14 +136,11 @@ existing = ""
 if cu is not None:
     existing = cu.getComment(CodeUnit.PLATE_COMMENT) or ""
 
-# Prepare the comment text to write
-# (Keep the summary at the very top in both cases.)
+
 if existing.strip():
-    # Two-button choice via askChoice (Append/Delete)
     opts = ArrayList()
     opts.add("Append")
     opts.add("Delete")
-    # default MUST be one of the objects in opts (opts.get(0) here)
     choice = askChoice("Existing Comment Found", 
               "A plate comment already exists at the top of this function.\nWhat do you want to do?", 
               opts, opts.get(0))
@@ -111,10 +152,8 @@ if existing.strip():
 else:
     new_comment = summary
 
-# Apply change under a transaction
 tid = currentProgram.startTransaction("Expl(AI)n: Add summary plate comment")
 try:
-    # Ensure we have a code unit to attach the plate comment to
     if cu is None:
         cu = listing.getCodeUnitAt(entry)
     if cu is None:
