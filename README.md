@@ -32,12 +32,17 @@ Explain decompiled functions in **one click**.
   - **OpenAI**: `pip install openai`
   - **Ollama**: `pip install ollama`
 
-For example, under Windows:
+**There's no need to install them all**, the script only imports what you specify in the config.
+
+E.g., Windows:
 ```
 C:\Users\simo\AppData\Roaming\ghidra\ghidra_11.4.2_PUBLIC\venv\Scripts\python.exe -m pip install google-genai openai ollama
 ```
 
-However, **there's no need to install them all**, the script only imports what you specify in the config.
+E.g., Linux:
+```
+/home/simo/.config/ghidra/ghidra_12.1_PUBLIC/venv/bin/python3 -m pip install google-genai openai ollama
+```
 
 
 ## Configure
