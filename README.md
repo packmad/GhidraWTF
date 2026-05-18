@@ -42,32 +42,48 @@ However, **there's no need to install them all**, the script only imports what y
 
 ## Configure
 
-Open `ghidrawtf.py` and set the `CONFIG` dict at the top:
+Open `ghidrawtf.py` and edit `CONFIG` (and optionally `DEFAULT_MODELS`) at the top of the file.
 
 ```python
 CONFIG = {
     'LLMClient': 'Openai',   # 'Gemini' | 'Openai' | 'Ollama'
-    'api_key':   '...',      # required for Gemini/Openai
+    'api_key':   '...',      # required for Gemini/Openai; leave empty for Ollama
     'host':      '',         # required for Ollama (e.g. 'http://127.0.0.1:11434')
+    'model_name': '',        # optional override; empty = use DEFAULT_MODELS[LLMClient]
+}
+
+DEFAULT_MODELS = {
+    'Gemini': 'models/gemini-2.5-flash-lite',
+    'Openai': 'gpt-5.4-mini',
+    'Ollama': 'qwen2.5-coder:32b',
 }
 ```
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `LLMClient` | yes | Backend to use: `Gemini`, `Openai`, or `Ollama` |
+| `api_key` | Gemini / OpenAI | API key for the cloud provider |
+| `host` | Ollama | Base URL of your Ollama server |
+| `model_name` | no | Model ID passed to the backend. If empty, the script uses `DEFAULT_MODELS[LLMClient]` |
+
+To change the default model for a provider, edit `DEFAULT_MODELS`. To override it for one run without editing defaults, set `CONFIG['model_name']` (for example `'gpt-4o'` or `'llama3.2'`).
 
 ### Provider setup
 
 - **OpenAI**
-  - Set `CONFIG['LLMClient'] = 'Openai'`
-  - Set `CONFIG['api_key'] = 'YOUR_OPENAI_API_KEY'`
-  - Default model in the script: `gpt-4.1-mini`
+  - `CONFIG['LLMClient'] = 'Openai'`
+  - `CONFIG['api_key'] = 'YOUR_OPENAI_API_KEY'`
+  - Default model: `gpt-5.4-mini` (see `DEFAULT_MODELS['Openai']`)
 
 - **Gemini**
-  - Set `CONFIG['LLMClient'] = 'Gemini'`
-  - Set `CONFIG['api_key'] = 'YOUR_GEMINI_API_KEY'`
-  - Default model in the script: `models/gemini-2.5-flash-lite`
+  - `CONFIG['LLMClient'] = 'Gemini'`
+  - `CONFIG['api_key'] = 'YOUR_GEMINI_API_KEY'`
+  - Default model: `models/gemini-2.5-flash-lite` (see `DEFAULT_MODELS['Gemini']`)
 
 - **Ollama (local)**
-  - Set `CONFIG['LLMClient'] = 'Ollama'`
-  - Set `CONFIG['host'] = 'http://127.0.0.1:11434'` (or wherever your Ollama server is)
-  - Default model in the script: `qwen2.5-coder:32b`
+  - `CONFIG['LLMClient'] = 'Ollama'`
+  - `CONFIG['host'] = 'http://127.0.0.1:11434'` (or your Ollama URL)
+  - Default model: `qwen2.5-coder:32b` (see `DEFAULT_MODELS['Ollama']`; must match a model you have pulled locally)
 
 ## Use
 

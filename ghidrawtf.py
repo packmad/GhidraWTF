@@ -16,6 +16,13 @@ CONFIG = {
     'LLMClient': '',
     'api_key': '',
     'host': '',
+    'model_name': '',
+}
+
+DEFAULT_MODELS = {
+    'Gemini': 'models/gemini-2.5-flash-lite',
+    'Openai': 'gpt-5.4-mini',
+    'Ollama': 'qwen2.5-coder:32b',
 }
 
 if CONFIG['api_key'] == '' and CONFIG['LLMClient'] != 'Ollama':
@@ -61,7 +68,7 @@ match CONFIG['LLMClient']:
 
         class Gemini(LLMClient):
             
-            def __init__(self, api_key: str, model_name : str = 'models/gemini-2.5-flash-lite'):
+            def __init__(self, api_key: str, model_name: str = DEFAULT_MODELS['Gemini']):
                 genai.configure(api_key=api_key)
                 self.model = genai.GenerativeModel(model_name)
 
@@ -76,7 +83,7 @@ match CONFIG['LLMClient']:
 
         class Openai(LLMClient):
             
-            def __init__(self, api_key: str, model_name : str = "gpt-4.1-mini"):
+            def __init__(self, api_key: str, model_name: str = DEFAULT_MODELS['Openai']):
                 self.openai_client = OpenAI(api_key=api_key)
                 self.model_name = model_name
 
@@ -94,7 +101,7 @@ match CONFIG['LLMClient']:
         
         class Ollama(LLMClient):
             
-            def __init__(self, api_key: str, model_name : str = 'qwen2.5-coder:32b'):
+            def __init__(self, api_key: str, model_name: str = DEFAULT_MODELS['Ollama']):
                 self.model = Client(host=CONFIG['host'])
                 self.model_name = model_name
             
@@ -167,7 +174,10 @@ if df is None:
     popup("ERROR: No DecompiledFunction returned.")
     raise SystemExit
 
-llm_client: LLMClient = globals()[CONFIG['LLMClient']](CONFIG['api_key'])
+llm_client: LLMClient = globals()[CONFIG['LLMClient']](
+    api_key=CONFIG['api_key'],
+    model_name=CONFIG['model_name'] or DEFAULT_MODELS[CONFIG['LLMClient']],
+)
 _check_cancelled(mon)
 try:
     mon.setMessage("Expl(AI)n: Querying LLM backend...")
