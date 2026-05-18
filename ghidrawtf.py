@@ -13,10 +13,10 @@ from java.util import ArrayList
 
 
 CONFIG = {
-    'LLMClient': '',
-    'api_key': '',
-    'host': '',
-    'model_name': '',
+    'LLMClient': '',  # required; one of 'Gemini', 'Openai', 'Ollama'
+    'api_key': '',  # required for Gemini/Openai; leave empty for Ollama
+    'host': '',  # required for Ollama
+    'model_name': '',  # optional override; empty use DEFAULT_MODELS
 }
 
 DEFAULT_MODELS = {
@@ -24,6 +24,16 @@ DEFAULT_MODELS = {
     'Openai': 'gpt-5.4-mini',
     'Ollama': 'qwen2.5-coder:32b',
 }
+
+if CONFIG['LLMClient'] not in DEFAULT_MODELS:
+    if CONFIG['LLMClient'] == '':
+        popup(f'ERROR: You must specify the LLMClient in the CONFIG dictionary!')
+    else:
+        popup(f'ERROR: Unsupported LLMClient: {CONFIG['LLMClient']}')
+    raise SystemExit
+
+if CONFIG['model_name'] == '':
+    CONFIG['model_name'] = DEFAULT_MODELS[CONFIG['LLMClient']]
 
 if CONFIG['api_key'] == '' and CONFIG['LLMClient'] != 'Ollama':
     script_path = Path(__file__).resolve()
@@ -35,6 +45,7 @@ class LLMClient(ABC):
     PROMPT: str =  """
 Role: You are an expert reverse engineer in analyzing decompiled binaries.
 Context: You are given the output of Ghidra's decompiler for a single function.
+Binary format: {binary_format}
 Task: Produce a concise, high-level summary of the function's purpose and observable behavior.
 Guidelines:
 - Describe what the function does, not how it is implemented.
@@ -50,8 +61,11 @@ Decompiled function:\n
     def append_tag(self, txt: str) -> str:
         return f"{self.TAG_BEGIN}\n{txt}\n{self.TAG_END}\n"
     
-    def summarize(self, decompiled_code: str) -> str:
-        prompt = f"{self.PROMPT}{self.TAG_BLOCK.sub('', decompiled_code.replace(self.DEC_WARNING, ''))}"
+    def summarize(self, decompiled_code: str, binary_format: str) -> str:
+        prompt = (
+            f"{self.PROMPT.format(binary_format=binary_format)}"
+            f"{self.TAG_BLOCK.sub('', decompiled_code.replace(self.DEC_WARNING, ''))}"
+        )
         #print(f'!DEBUG {prompt=}')
         answer = self.append_tag(self._summarize_impl(prompt))
         #print(f'!DEBUG {answer=}')
@@ -112,7 +126,7 @@ match CONFIG['LLMClient']:
                 return response['message']['content']
 
     case _:
-        popup(f'ERROR: Unsupported LLMClient: {CONFIG['LLMClient']}')
+        popup(f'ERROR: Incorrect program logic; this case should not occur!')
         raise SystemExit
     
 
@@ -176,7 +190,7 @@ if df is None:
 
 llm_client: LLMClient = globals()[CONFIG['LLMClient']](
     api_key=CONFIG['api_key'],
-    model_name=CONFIG['model_name'] or DEFAULT_MODELS[CONFIG['LLMClient']],
+    model_name=CONFIG['model_name'],
 )
 _check_cancelled(mon)
 try:
@@ -192,7 +206,8 @@ _llm_result = {"summary": None, "err": None}
 def _llm_worker():
     try:
         code = df.getC()
-        _llm_result["summary"] = llm_client.summarize(code)
+        binary_format = currentProgram.getExecutableFormat()
+        _llm_result["summary"] = llm_client.summarize(code, binary_format)
     except Exception as e:
         _llm_result["err"] = e
 
